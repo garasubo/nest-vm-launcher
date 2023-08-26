@@ -1,0 +1,39 @@
+require 'yaml'
+
+
+def load_config_yaml
+  config = YAML.load_file("config.yaml")
+  return config
+end
+
+Vagrant.configure("2") do |config|
+  config.vagrant.plugins = "vagrant-libvirt"
+  config.vm.box = "generic/ubuntu2204"
+
+  yaml_config = load_config_yaml
+
+  config.vm.define yaml_config["host_name"] do |l1|
+    l1.vm.hostname = yaml_config["host_name"]
+    l1.vm.provider "libvirt" do |libvirt|
+      libvirt.driver = "kvm"
+      libvirt.nested = "true"
+      libvirt.cpus = yaml_config["cpus"]
+      libvirt.memory = yaml_config["memory"]
+      libvirt.cpu_mode = yaml_config["cpu_mode"]
+    end
+
+    # enable network bridge
+    # Ref: https://developer.hashicorp.com/vagrant/docs/networking/public_network
+    if yaml_config["network_interface"] != nil then
+      network_interface = yaml_config["network_interface"]
+      puts "enable network bridge with interface: #{network_interface}"
+      l1.vm.network "public_network", bridge: network_interface, dev: network_interface
+    end
+
+    # provisoning
+    # Run `vagrant provision` to apply the changes
+    l1.vm.provision "file", source: yaml_config["l2_vagrant_dir"], destination: "/home/vagrant/l2-vagrant"
+    l1.vm.provision "shell", path: "./init.sh", reboot: true
+    l1.vm.provision "shell", path: "./init-user.sh", privileged: false
+  end
+end
