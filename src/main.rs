@@ -1,18 +1,22 @@
+use std::io::Write;
 use std::path::PathBuf;
+use std::process::Command;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumString;
 
 #[derive(Parser)]
 struct Args {
-    #[clap(short, long)]
+    #[clap(long)]
     l1_config: Option<PathBuf>,
-    #[clap(short, long)]
+    #[clap(long)]
     l2_config: Option<PathBuf>,
     #[clap(short, long)]
-    script_path: Option<PathBuf>,
+    bench_script: Option<PathBuf>,
     #[clap(short, long)]
     dest: Option<PathBuf>,
+    #[clap(short, long)]
+    output: Option<PathBuf>,
 }
 
 #[derive(Debug, PartialEq, EnumString, Serialize, Deserialize)]
@@ -75,23 +79,27 @@ impl Default for L2VagrantConfig {
     }
 }
 
-fn main() {
-    let args = Args::parse();
-    let project_path = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+fn create_vagrant_directories(args: &Args, project_path: &PathBuf) {
     let l1_vagrant_template_path = project_path.join("resources").join("l1-vagrant-template");
-    let dest_base_dir = if let Some(dest) = args.dest {
-        dest
+    let dest_base_dir = if let Some(dest) = &args.dest {
+        dest.clone()
     } else {
         std::env::current_dir().unwrap()
     };
     let l1_vagrant_dest = dest_base_dir.join("l1-vagrant");
     println!("{:?}", l1_vagrant_template_path);
     println!("{:?}", l1_vagrant_template_path);
-    let mut l1_vagrant_config = if let Some(config_path) = args.l1_config {
+    let mut l1_vagrant_config = if let Some(config_path) = &args.l1_config {
         let config_file = std::fs::File::open(config_path).unwrap();
         serde_yaml::from_reader(config_file).unwrap()
     } else {
         L1VagrantConfig::default()
+    };
+    let l2_vagrant_config = if let Some(config_path) = &args.l2_config {
+        let config_file = std::fs::File::open(config_path).unwrap();
+        serde_yaml::from_reader(config_file).unwrap()
+    } else {
+        L2VagrantConfig::default()
     };
     fs_extra::dir::create_all(l1_vagrant_dest.as_path(), false).unwrap();
     fs_extra::dir::copy(
@@ -99,8 +107,8 @@ fn main() {
         l1_vagrant_dest.as_path(),
         &fs_extra::dir::CopyOptions::new().content_only(true),
     ).unwrap();
-    if l1_vagrant_config.l2_vagrant_dir.is_none() {
-        let l2_vagrant_dest = std::env::current_dir().unwrap().join("l2-vagrant");
+    let l2_vagrant_dest = if l1_vagrant_config.l2_vagrant_dir.is_none() {
+        let l2_vagrant_dest = dest_base_dir.join("l2-vagrant");
         let l2_vagrant_template_path = project_path.join("resources").join("l2-vagrant-template");
         fs_extra::dir::create_all(l2_vagrant_dest.as_path(), false).unwrap();
         fs_extra::dir::copy(
@@ -108,11 +116,69 @@ fn main() {
             l2_vagrant_dest.as_path(),
             &fs_extra::dir::CopyOptions::new().content_only(true),
         ).unwrap();
-        l1_vagrant_config.l2_vagrant_dir = Some(l2_vagrant_dest);
-    }
+        l1_vagrant_config.l2_vagrant_dir = Some(std::fs::canonicalize(&l2_vagrant_dest).unwrap());
+        l2_vagrant_dest
+    } else {
+        l1_vagrant_config.l2_vagrant_dir.clone().unwrap()
+    };
     let l1_vagrant_config_file = std::fs::File::create(l1_vagrant_dest.join("config.yaml")).unwrap();
     serde_yaml::to_writer(l1_vagrant_config_file, &l1_vagrant_config).unwrap();
+    let l2_vagrant_config_file = std::fs::File::create(l2_vagrant_dest.join("config.yaml")).unwrap();
+    serde_yaml::to_writer(l2_vagrant_config_file, &l2_vagrant_config).unwrap();
+}
 
-    println!("{:?}", project_path);
-    println!("Hello, world!");
+fn launch_l1_vm(args: &Args) {
+    let dest_base_dir = if let Some(dest) = &args.dest {
+        dest.clone()
+    } else {
+        std::env::current_dir().unwrap()
+    };
+    let l1_vagrant_dir = dest_base_dir.join("l1-vagrant");
+    // vagrant up
+    let mut child = Command::new("vagrant")
+        .current_dir(l1_vagrant_dir)
+        .arg("up")
+        .spawn()
+        .unwrap();
+    child.wait().unwrap();
+}
+
+fn run_l2_bench(args: &Args) {
+    let dest_base_dir = if let Some(dest) = &args.dest {
+        dest.clone()
+    } else {
+        std::env::current_dir().unwrap()
+    };
+    let l1_vagrant_dir = dest_base_dir.join("l1-vagrant");
+    // run l2 bench
+    let mut child = Command::new("vagrant")
+        .current_dir(&l1_vagrant_dir)
+        .arg("ssh")
+        .arg("-c")
+        .arg("./run-l2-bench.sh")
+        .spawn()
+        .unwrap();
+    child.wait().unwrap();
+
+    let output = Command::new("vagrant")
+        .current_dir(&l1_vagrant_dir)
+        .arg("ssh")
+        .arg("-c")
+        .arg("cat ./bench-results.txt")
+        .output()
+        .unwrap();
+    if let Some(output_path) = &args.output {
+        let mut output_file = std::fs::File::create(output_path).unwrap();
+        output_file.write_all(&output.stdout).unwrap();
+    } else {
+        println!("{}", String::from_utf8(output.stdout).unwrap());
+    }
+}
+
+fn main() {
+    let args = Args::parse();
+    let project_path = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    //create_vagrant_directories(&args, &project_path);
+    launch_l1_vm(&args);
+    run_l2_bench(&args);
 }

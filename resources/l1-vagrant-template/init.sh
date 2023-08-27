@@ -10,6 +10,6 @@ fi
 if [ ! -e "/etc/apt/sources.list.d/hashicorp.list" ]; then
     echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
 fi
-sudo apt-get update && sudo apt-get install -y qemu libvirt-daemon-system libvirt-dev ebtables libguestfs-tools vagrant ruby-fog-libvirt build-essential
+sudo apt-get update && sudo apt-get install -y qemu libvirt-daemon-system libvirt-dev ebtables libguestfs-tools vagrant ruby-fog-libvirt build-essential rsync
 
 sudo adduser vagrant libvirt
