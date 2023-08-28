@@ -7,15 +7,15 @@ use strum_macros::EnumString;
 
 #[derive(Parser)]
 struct Args {
-    #[clap(long)]
+    #[clap(long, help = "Path to L1 VM config yaml file")]
     l1_config: Option<PathBuf>,
-    #[clap(long)]
+    #[clap(long, help = "Path to L2 VM config yaml file")]
     l2_config: Option<PathBuf>,
-    #[clap(short, long)]
+    #[clap(short, long, help = "Path to bench script running in L2 VM")]
     bench_script: Option<PathBuf>,
-    #[clap(short, long)]
+    #[clap(short, long, help = "Path to project directory")]
     dest: Option<PathBuf>,
-    #[clap(short, long)]
+    #[clap(short, long, help = "Path to output file for benchmark results")]
     output: Option<PathBuf>,
 }
 
@@ -52,6 +52,7 @@ struct L2VagrantConfig {
     memory: u64,
     cpu_mode: CpuMode,
     enable_network_bridge: bool,
+    bench_script_path: Option<PathBuf>,
 }
 
 impl Default for L1VagrantConfig {
@@ -75,6 +76,7 @@ impl Default for L2VagrantConfig {
             memory: 2048,
             cpu_mode: CpuMode::Custom,
             enable_network_bridge: false,
+            bench_script_path: None,
         }
     }
 }
@@ -95,7 +97,7 @@ fn create_vagrant_directories(args: &Args, project_path: &PathBuf) {
     } else {
         L1VagrantConfig::default()
     };
-    let l2_vagrant_config = if let Some(config_path) = &args.l2_config {
+    let mut l2_vagrant_config = if let Some(config_path) = &args.l2_config {
         let config_file = std::fs::File::open(config_path).unwrap();
         serde_yaml::from_reader(config_file).unwrap()
     } else {
@@ -123,6 +125,11 @@ fn create_vagrant_directories(args: &Args, project_path: &PathBuf) {
     };
     let l1_vagrant_config_file = std::fs::File::create(l1_vagrant_dest.join("config.yaml")).unwrap();
     serde_yaml::to_writer(l1_vagrant_config_file, &l1_vagrant_config).unwrap();
+    if let Some(bench_script_path) = &args.bench_script {
+        let bench_script_dest = l2_vagrant_dest.join("run-bench.sh");
+        fs_extra::file::copy(bench_script_path, bench_script_dest, &fs_extra::file::CopyOptions::new()).unwrap();
+        l2_vagrant_config.bench_script_path = Some(PathBuf::from("/home/vagrant/l2-vagrant/run-bench.sh"));
+    }
     let l2_vagrant_config_file = std::fs::File::create(l2_vagrant_dest.join("config.yaml")).unwrap();
     serde_yaml::to_writer(l2_vagrant_config_file, &l2_vagrant_config).unwrap();
 }
@@ -178,7 +185,11 @@ fn run_l2_bench(args: &Args) {
 fn main() {
     let args = Args::parse();
     let project_path = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    //create_vagrant_directories(&args, &project_path);
+    create_vagrant_directories(&args, &project_path);
     launch_l1_vm(&args);
-    run_l2_bench(&args);
+    if args.bench_script.is_none() {
+        println!("No bench script specified, skipping bench");
+    } else {
+        run_l2_bench(&args);
+    }
 }

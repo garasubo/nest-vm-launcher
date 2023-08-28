@@ -32,7 +32,7 @@ Vagrant.configure("2") do |config|
     # provisoning
     # Run `vagrant provision` to apply the changes
     l1.vm.provision "file", source: yaml_config["l2_vagrant_dir"], destination: "/home/vagrant/l2-vagrant"
-    l1.vm.provision "file", source: "./run-l2-bench,sh", destination: "/home/vagrant/run-l2-bench.sh"
+    l1.vm.provision "file", source: "./run-l2-bench.sh", destination: "/home/vagrant/run-l2-bench.sh"
     l1.vm.provision "shell", path: "./init.sh", reboot: true
     l1.vm.provision "shell", path: "./init-user.sh", privileged: false
   end
