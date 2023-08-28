@@ -1,0 +1,5 @@
+host_name: "l1-vagrant"
+cpus: 4
+memory: 16384
+cpu_mode: "host-model"
+network_interface: "enp7s0"
