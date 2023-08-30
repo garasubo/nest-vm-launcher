@@ -81,7 +81,16 @@ impl Default for L2VagrantConfig {
     }
 }
 
-fn create_vagrant_directories(args: &Args, project_path: &PathBuf) {
+struct CreateVagrantDirectoriesResult {
+    l1_vagrant_dir: PathBuf,
+    l2_vagrant_dir: PathBuf,
+    l1_exists: bool,
+    l2_exists: bool,
+    l1_config_updated: bool,
+    l2_config_updated: bool,
+}
+
+fn create_vagrant_directories(args: &Args, project_path: &PathBuf) -> CreateVagrantDirectoriesResult {
     let l1_vagrant_template_path = project_path.join("resources").join("l1-vagrant-template");
     let dest_base_dir = if let Some(dest) = &args.dest {
         dest.clone()
@@ -89,8 +98,6 @@ fn create_vagrant_directories(args: &Args, project_path: &PathBuf) {
         std::env::current_dir().unwrap()
     };
     let l1_vagrant_dest = dest_base_dir.join("l1-vagrant");
-    println!("{:?}", l1_vagrant_template_path);
-    println!("{:?}", l1_vagrant_template_path);
     let mut l1_vagrant_config = if let Some(config_path) = &args.l1_config {
         let config_file = std::fs::File::open(config_path).unwrap();
         serde_yaml::from_reader(config_file).unwrap()
@@ -103,51 +110,103 @@ fn create_vagrant_directories(args: &Args, project_path: &PathBuf) {
     } else {
         L2VagrantConfig::default()
     };
-    fs_extra::dir::create_all(l1_vagrant_dest.as_path(), false).unwrap();
-    fs_extra::dir::copy(
-        l1_vagrant_template_path.as_path(),
-        l1_vagrant_dest.as_path(),
-        &fs_extra::dir::CopyOptions::new().content_only(true),
-    ).unwrap();
-    let l2_vagrant_dest = if l1_vagrant_config.l2_vagrant_dir.is_none() {
-        let l2_vagrant_dest = dest_base_dir.join("l2-vagrant");
-        let l2_vagrant_template_path = project_path.join("resources").join("l2-vagrant-template");
+
+    // Create l1-vagrant directory from template if it does not exist
+    let l1_exists = if l1_vagrant_dest.exists() {
+        println!("l1-vagrant directory already exists");
+        true
+    } else {
+        fs_extra::dir::create_all(l1_vagrant_dest.as_path(), false).unwrap();
+        fs_extra::dir::copy(
+            l1_vagrant_template_path.as_path(),
+            l1_vagrant_dest.as_path(),
+            &fs_extra::dir::CopyOptions::new().content_only(true),
+        ).unwrap();
+        false
+    };
+
+    // Create l2-vagrant directory from template if it does not exist
+    let l2_vagrant_dest = dest_base_dir.join("l2-vagrant");
+    let l2_vagrant_template_path = project_path.join("resources").join("l2-vagrant-template");
+    let l2_exists = if l2_vagrant_dest.exists() {
+        println!("l2-vagrant directory already exists");
+        if args.l2_config.is_some() {
+            println!("l2_config will be ignored");
+        }
+        true
+    } else {
         fs_extra::dir::create_all(l2_vagrant_dest.as_path(), false).unwrap();
         fs_extra::dir::copy(
             l2_vagrant_template_path.as_path(),
             l2_vagrant_dest.as_path(),
             &fs_extra::dir::CopyOptions::new().content_only(true),
         ).unwrap();
-        l1_vagrant_config.l2_vagrant_dir = Some(std::fs::canonicalize(&l2_vagrant_dest).unwrap());
-        l2_vagrant_dest
-    } else {
-        l1_vagrant_config.l2_vagrant_dir.clone().unwrap()
+        false
     };
-    let l1_vagrant_config_file = std::fs::File::create(l1_vagrant_dest.join("config.yaml")).unwrap();
-    serde_yaml::to_writer(l1_vagrant_config_file, &l1_vagrant_config).unwrap();
+
+    let mut l1_config_updated = false;
+    // Write l1-vagrant config if l1-vagrant directory is created or l1_config is specified by args
+    if !l1_exists || args.l1_config.is_some() {
+        l1_vagrant_config.l2_vagrant_dir = Some(std::fs::canonicalize(&l2_vagrant_dest).unwrap());
+        let l1_vagrant_config_file = std::fs::File::create(l1_vagrant_dest.join("config.yaml")).unwrap();
+        serde_yaml::to_writer(l1_vagrant_config_file, &l1_vagrant_config).unwrap();
+        l1_config_updated = true;
+    }
+
+    // Write bench script
     if let Some(bench_script_path) = &args.bench_script {
         let bench_script_dest = l2_vagrant_dest.join("run-bench.sh");
-        fs_extra::file::copy(bench_script_path, bench_script_dest, &fs_extra::file::CopyOptions::new()).unwrap();
+        fs_extra::file::copy(bench_script_path, bench_script_dest, &fs_extra::file::CopyOptions::new().overwrite(true)).unwrap();
         l2_vagrant_config.bench_script_path = Some(PathBuf::from("/home/vagrant/l2-vagrant/run-bench.sh"));
     }
-    let l2_vagrant_config_file = std::fs::File::create(l2_vagrant_dest.join("config.yaml")).unwrap();
-    serde_yaml::to_writer(l2_vagrant_config_file, &l2_vagrant_config).unwrap();
+
+    let mut l2_config_updated = false;
+    let l2_vagrant_config_path = l2_vagrant_dest.join("config.yaml");
+    // Write l2-vagrant config if l2-vagrant directory is created or l2_config is specified by args
+    if !l2_exists || args.l2_config.is_some() {
+        let l2_vagrant_config_file = std::fs::File::create(&l2_vagrant_config_path).unwrap();
+        serde_yaml::to_writer(l2_vagrant_config_file, &l2_vagrant_config).unwrap();
+        l2_config_updated = true;
+    }
+    if l2_exists && args.l2_config.is_none() && args.bench_script.is_some() {
+        l2_vagrant_config = serde_yaml::from_reader(std::fs::File::open(&l2_vagrant_config_path).unwrap()).unwrap();
+        l2_vagrant_config.bench_script_path = Some(PathBuf::from("/home/vagrant/l2-vagrant/run-bench.sh"));
+        let file = std::fs::OpenOptions::new().write(true).open(&l2_vagrant_config_path).unwrap();
+        serde_yaml::to_writer(file, &l2_vagrant_config).unwrap();
+        l2_config_updated = true;
+    }
+
+    CreateVagrantDirectoriesResult {
+        l1_vagrant_dir: l1_vagrant_dest,
+        l2_vagrant_dir: l2_vagrant_dest,
+        l1_exists,
+        l2_exists,
+        l1_config_updated,
+        l2_config_updated
+    }
 }
 
-fn launch_l1_vm(args: &Args) {
-    let dest_base_dir = if let Some(dest) = &args.dest {
-        dest.clone()
-    } else {
-        std::env::current_dir().unwrap()
-    };
-    let l1_vagrant_dir = dest_base_dir.join("l1-vagrant");
+fn launch_l1_vm(_args: &Args, create_result: &CreateVagrantDirectoriesResult) {
+    let l1_vagrant_dir = &create_result.l1_vagrant_dir;
     // vagrant up
-    let mut child = Command::new("vagrant")
-        .current_dir(l1_vagrant_dir)
-        .arg("up")
-        .spawn()
-        .unwrap();
-    child.wait().unwrap();
+    if !create_result.l1_exists {
+        let mut child = Command::new("vagrant")
+            .current_dir(l1_vagrant_dir)
+            .arg("up")
+            .spawn()
+            .unwrap();
+        child.wait().unwrap();
+    } else if create_result.l1_config_updated {
+        // TODO: `vagrat up` if L1 VM is not created
+        let mut child = Command::new("vagrant")
+            .current_dir(l1_vagrant_dir)
+            .arg("reload")
+            .arg("--provision")
+            .spawn()
+            .unwrap();
+        child.wait().unwrap();
+    }
+    // TODO: re-provision L2 VM if L2 VM config is updated
 }
 
 fn run_l2_bench(args: &Args) {
@@ -185,8 +244,8 @@ fn run_l2_bench(args: &Args) {
 fn main() {
     let args = Args::parse();
     let project_path = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    create_vagrant_directories(&args, &project_path);
-    launch_l1_vm(&args);
+    let result = create_vagrant_directories(&args, &project_path);
+    launch_l1_vm(&args, &result);
     if args.bench_script.is_none() {
         println!("No bench script specified, skipping bench");
     } else {
