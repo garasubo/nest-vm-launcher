@@ -1,9 +1,18 @@
+use clap::Parser;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
-use clap::Parser;
-use serde::{Deserialize, Serialize};
 use strum_macros::EnumString;
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+enum Arch {
+    #[serde(rename = "amd")]
+    Amd,
+    #[serde(rename = "intel")]
+    Intel,
+}
 
 #[derive(Parser)]
 struct Args {
@@ -42,9 +51,17 @@ struct L1VagrantConfig {
     memory: u64,
     cpu_mode: CpuMode,
     network_interface: Option<String>,
-    l2_vagrant_dir: Option<PathBuf>,
+    kvm_options: HashMap<String, String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct GeneratedL1VagrantConfig {
+    #[serde(flatten)]
+    l1_vagrant_config: L1VagrantConfig,
+
+    arch: Arch,
+    l2_vagrant_dir: PathBuf,
+}
 #[derive(Debug, Serialize, Deserialize)]
 struct L2VagrantConfig {
     host_name: String,
@@ -63,7 +80,7 @@ impl Default for L1VagrantConfig {
             memory: 4096,
             cpu_mode: CpuMode::Custom,
             network_interface: None,
-            l2_vagrant_dir: None,
+            kvm_options: HashMap::new(),
         }
     }
 }
@@ -90,7 +107,11 @@ struct CreateVagrantDirectoriesResult {
     l2_config_updated: bool,
 }
 
-fn create_vagrant_directories(args: &Args, project_path: &PathBuf) -> CreateVagrantDirectoriesResult {
+fn create_vagrant_directories(
+    args: &Args,
+    project_path: &PathBuf,
+    arch: Arch,
+) -> CreateVagrantDirectoriesResult {
     let l1_vagrant_template_path = project_path.join("resources").join("l1-vagrant-template");
     let dest_base_dir = if let Some(dest) = &args.dest {
         dest.clone()
@@ -98,12 +119,14 @@ fn create_vagrant_directories(args: &Args, project_path: &PathBuf) -> CreateVagr
         std::env::current_dir().unwrap()
     };
     let l1_vagrant_dest = dest_base_dir.join("l1-vagrant");
+    // read L1 config file
     let mut l1_vagrant_config = if let Some(config_path) = &args.l1_config {
         let config_file = std::fs::File::open(config_path).unwrap();
         serde_yaml::from_reader(config_file).unwrap()
     } else {
         L1VagrantConfig::default()
     };
+    // read L2 config file
     let mut l2_vagrant_config = if let Some(config_path) = &args.l2_config {
         let config_file = std::fs::File::open(config_path).unwrap();
         serde_yaml::from_reader(config_file).unwrap()
@@ -121,7 +144,8 @@ fn create_vagrant_directories(args: &Args, project_path: &PathBuf) -> CreateVagr
             l1_vagrant_template_path.as_path(),
             l1_vagrant_dest.as_path(),
             &fs_extra::dir::CopyOptions::new().content_only(true),
-        ).unwrap();
+        )
+        .unwrap();
         false
     };
 
@@ -140,24 +164,36 @@ fn create_vagrant_directories(args: &Args, project_path: &PathBuf) -> CreateVagr
             l2_vagrant_template_path.as_path(),
             l2_vagrant_dest.as_path(),
             &fs_extra::dir::CopyOptions::new().content_only(true),
-        ).unwrap();
+        )
+        .unwrap();
         false
     };
 
     let mut l1_config_updated = false;
     // Write l1-vagrant config if l1-vagrant directory is created or l1_config is specified by args
     if !l1_exists || args.l1_config.is_some() {
-        l1_vagrant_config.l2_vagrant_dir = Some(std::fs::canonicalize(&l2_vagrant_dest).unwrap());
-        let l1_vagrant_config_file = std::fs::File::create(l1_vagrant_dest.join("config.yaml")).unwrap();
-        serde_yaml::to_writer(l1_vagrant_config_file, &l1_vagrant_config).unwrap();
+        let generated_l1_config = GeneratedL1VagrantConfig {
+            l1_vagrant_config,
+            arch,
+            l2_vagrant_dir: std::fs::canonicalize(&l2_vagrant_dest).unwrap(),
+        };
+        let l1_vagrant_config_file =
+            std::fs::File::create(l1_vagrant_dest.join("config.yaml")).unwrap();
+        serde_yaml::to_writer(l1_vagrant_config_file, &generated_l1_config).unwrap();
         l1_config_updated = true;
     }
 
     // Write bench script
     if let Some(bench_script_path) = &args.bench_script {
         let bench_script_dest = l2_vagrant_dest.join("run-bench.sh");
-        fs_extra::file::copy(bench_script_path, bench_script_dest, &fs_extra::file::CopyOptions::new().overwrite(true)).unwrap();
-        l2_vagrant_config.bench_script_path = Some(PathBuf::from("/home/vagrant/l2-vagrant/run-bench.sh"));
+        fs_extra::file::copy(
+            bench_script_path,
+            bench_script_dest,
+            &fs_extra::file::CopyOptions::new().overwrite(true),
+        )
+        .unwrap();
+        l2_vagrant_config.bench_script_path =
+            Some(PathBuf::from("/home/vagrant/l2-vagrant/run-bench.sh"));
     }
 
     let mut l2_config_updated = false;
@@ -169,9 +205,14 @@ fn create_vagrant_directories(args: &Args, project_path: &PathBuf) -> CreateVagr
         l2_config_updated = true;
     }
     if l2_exists && args.l2_config.is_none() && args.bench_script.is_some() {
-        l2_vagrant_config = serde_yaml::from_reader(std::fs::File::open(&l2_vagrant_config_path).unwrap()).unwrap();
-        l2_vagrant_config.bench_script_path = Some(PathBuf::from("/home/vagrant/l2-vagrant/run-bench.sh"));
-        let file = std::fs::OpenOptions::new().write(true).open(&l2_vagrant_config_path).unwrap();
+        l2_vagrant_config =
+            serde_yaml::from_reader(std::fs::File::open(&l2_vagrant_config_path).unwrap()).unwrap();
+        l2_vagrant_config.bench_script_path =
+            Some(PathBuf::from("/home/vagrant/l2-vagrant/run-bench.sh"));
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&l2_vagrant_config_path)
+            .unwrap();
         serde_yaml::to_writer(file, &l2_vagrant_config).unwrap();
         l2_config_updated = true;
     }
@@ -182,7 +223,7 @@ fn create_vagrant_directories(args: &Args, project_path: &PathBuf) -> CreateVagr
         l1_exists,
         l2_exists,
         l1_config_updated,
-        l2_config_updated
+        l2_config_updated,
     }
 }
 
@@ -244,7 +285,16 @@ fn run_l2_bench(args: &Args) {
 fn main() {
     let args = Args::parse();
     let project_path = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let result = create_vagrant_directories(&args, &project_path);
+    let arch = if PathBuf::from("/sys/module/kvm_intel").exists() {
+        Arch::Intel
+    } else if PathBuf::from("/sys/module/kvm_amd").exists() {
+        Arch::Amd
+    } else {
+        panic!("kvm_intel or kvm_amd module is not loaded");
+    };
+
+    let result = create_vagrant_directories(&args, &project_path, arch);
+
     launch_l1_vm(&args, &result);
     if args.bench_script.is_none() {
         println!("No bench script specified, skipping bench");
