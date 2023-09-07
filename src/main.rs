@@ -1,9 +1,9 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process;
 use strum_macros::EnumString;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -20,11 +20,21 @@ struct Args {
     l1_config: Option<PathBuf>,
     #[clap(long, help = "Path to L2 VM config yaml file")]
     l2_config: Option<PathBuf>,
-    #[clap(short, long, help = "Path to bench script running in L2 VM")]
+    #[clap(
+        short,
+        long,
+        help = "Path to bench script running in L2 VM",
+        group = "bench"
+    )]
     bench_script: Option<PathBuf>,
     #[clap(short, long, help = "Path to project directory")]
     dest: Option<PathBuf>,
-    #[clap(short, long, help = "Path to output file for benchmark results")]
+    #[clap(
+        short,
+        long,
+        help = "Path to output file for benchmark results",
+        requires = "bench"
+    )]
     output: Option<PathBuf>,
 }
 
@@ -231,21 +241,25 @@ fn launch_l1_vm(_args: &Args, create_result: &CreateVagrantDirectoriesResult) {
     let l1_vagrant_dir = &create_result.l1_vagrant_dir;
     // vagrant up
     if !create_result.l1_exists {
-        let mut child = Command::new("vagrant")
+        let status = process::Command::new("vagrant")
             .current_dir(l1_vagrant_dir)
             .arg("up")
-            .spawn()
+            .status()
             .unwrap();
-        child.wait().unwrap();
+        if !status.success() {
+            panic!("vagrant up failed");
+        }
     } else if create_result.l1_config_updated {
         // TODO: `vagrat up` if L1 VM is not created
-        let mut child = Command::new("vagrant")
+        let status = process::Command::new("vagrant")
             .current_dir(l1_vagrant_dir)
             .arg("reload")
             .arg("--provision")
-            .spawn()
+            .status()
             .unwrap();
-        child.wait().unwrap();
+        if !status.success() {
+            panic!("vagrant up failed");
+        }
     }
     // TODO: re-provision L2 VM if L2 VM config is updated
 }
@@ -258,7 +272,7 @@ fn run_l2_bench(args: &Args) {
     };
     let l1_vagrant_dir = dest_base_dir.join("l1-vagrant");
     // run l2 bench
-    let mut child = Command::new("vagrant")
+    let mut child = process::Command::new("vagrant")
         .current_dir(&l1_vagrant_dir)
         .arg("ssh")
         .arg("-c")
@@ -267,7 +281,7 @@ fn run_l2_bench(args: &Args) {
         .unwrap();
     child.wait().unwrap();
 
-    let output = Command::new("vagrant")
+    let output = process::Command::new("vagrant")
         .current_dir(&l1_vagrant_dir)
         .arg("ssh")
         .arg("-c")
