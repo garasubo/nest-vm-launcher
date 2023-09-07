@@ -43,3 +43,13 @@ L1 VM及びL2 VMの設定はyamlファイルで行います。それぞれ以下
 - `cpus`: L2 VMのCPUコア数
 - `cpu_mode`: L2 VMのCPUモード
 - `enable_network_bridge`: L2 VMのブリッジ接続を有効にするかどうか
+
+
+# FAQ
+
+## Q. libvirtに指定するオプションを変更したい
+### A. `cpus`などと同様にConfigurationのプロパティを追加実装する必要があります
+`L1Vagrant`及び`L2Vagrant`が設定のyamlファイルを読み込むための構造体です。これらに対応するメンバーを追加する必要があります。
+また、変更したyamlファイルをVagrantに読み込ませるために、`resouces/l1-vagrant-template/Vagrantfile`及び`resouces/l2-vagrant-template/Vagrantfile`を変更する必要があります。
+追加されたプロパティをVagrantfileで読み取りlibvirtに渡してあげてください。
+具体的にはすでに実装されている`cpus`や`memory`などを参考にしてください。
