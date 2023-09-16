@@ -30,13 +30,16 @@
 ```
 
 ### How it works
-`--dest`で指定されたディレクトリにVagrant用の設定ファイルを生成し、Vagrantを実行します。
-`<dest>/l1-vagrant`がホストマシン上で実行されるL1 VM、`<dest>/l2-vagrant`がL1 VM上で実行されるL2 VM用のディレクトリです。
-`l2-vagrant`の内容はL1 VMのsync folderとして設定されるので、ホストマシンでの変更がL2 VMに反映されます。
+`--project-dir`で指定されたディレクトリにVagrant用の設定ファイルを生成し、Vagrantを実行します。
+`<project-dir>/l1-vagrant`がホストマシン上で実行されるL1 VM、`<project-dir>/l2-vagrant`がL1 VM上で実行されるL2 VM用のディレクトリです。
+`l2-vagrant`の内容はL1 VMのsync folderとして設定されるので、`vagrant reload`コマンドなどによりホストマシンでの変更がL1 VMに反映されます。
 
 `vagrant up`によってプロビジョニングが終了したあと、`--bench-script`で指定されたスクリプトをL2 VM上で実行します。
 L2 VM上で実行されるスクリプトの標準出力結果は、`--output`で指定されたファイルに保存され、指定がなかった場合は標準出力に吐き出されます。
 また、L1 VM上にも`/home/vagrant/bench-results.txt`という形で保存されます。
+
+L2 VMには`sysbench`及び`phoronix-test-suite`がインストールされています。
+他にも必要なパッケージがある場合はベンチマークスクリプトで適宜インストールしてください。
 
 ## Configuration
 L1 VM及びL2 VMの設定はyamlファイルで行います。それぞれ以下のようなプロパティが利用できます。

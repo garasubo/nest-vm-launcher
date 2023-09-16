@@ -43,6 +43,8 @@ struct ProvisionArgs {
     bench_script: Option<PathBuf>,
     #[clap(short, long, help = "Path to output file for benchmark results")]
     output: Option<PathBuf>,
+    #[clap(long, default_value_t = false, help = "Overwrite existing files with original template files")]
+    sync: bool,
 }
 
 #[derive(Parser)]
@@ -369,10 +371,25 @@ fn update_l2_config(l2_vagrant_dir: &PathBuf, l2_config: L2VagrantConfig, bench_
 }
 
 
-fn run_provision(args: ProvisionArgs, _resource_path: &PathBuf, arch: Arch) -> Result<(), anyhow::Error> {
+fn run_provision(args: ProvisionArgs, resource_path: &PathBuf, arch: Arch) -> Result<(), anyhow::Error> {
     let project_path = args.project_dir.unwrap_or_else(|| std::env::current_dir().unwrap());
     let l1_vagrant_dir = project_path.join("l1-vagrant");
     let l2_vagrant_dir = project_path.join("l2-vagrant");
+    if args.sync {
+        println!("copy template files to project directory");
+        let l1_vagrant_template_path = resource_path.join("l1-vagrant-template");
+        fs_extra::dir::copy(
+            l1_vagrant_template_path.as_path(),
+            l1_vagrant_dir.as_path(),
+            &fs_extra::dir::CopyOptions::new().overwrite(true).content_only(true),
+        )?;
+        let l2_vagrant_template_path = resource_path.join("l2-vagrant-template");
+        fs_extra::dir::copy(
+            l2_vagrant_template_path.as_path(),
+            l2_vagrant_dir.as_path(),
+            &fs_extra::dir::CopyOptions::new().overwrite(true).content_only(true),
+        )?;
+    }
     if let Some(l1_config_path) = args.l1_config {
         let l1_config = serde_yaml::from_reader(std::fs::File::open(l1_config_path)?)?;
         update_l1_config(&l1_vagrant_dir, l1_config, arch, &l2_vagrant_dir)?;
