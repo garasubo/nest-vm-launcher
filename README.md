@@ -14,14 +14,25 @@
 
 ### 実行例
 `./example`以下にあるファイルを使い実行する例です。
+
+新しく作業用のディレクトリを作成し、VMをつくる場合は以下のように実行します。
 ```bash
-./launcher.sh --l1-config ./example/l1-config.yaml --l2-config ./example/l2-config.yaml --bench-script ./example/run-bench.sh --output output.txt --dest dest
+./launcher.sh create --l1-config ./example/l1-config.yaml --l2-config ./example/l2-config.yaml --bench-script ./example/run-bench.sh --output output.txt --project-dir dest
+```
+
+既存のディレクトリを利用して作成済みのVMを起動する場合は以下のように実行します。
+```bash
+./launcher.sh provision --l1-config ./example/l1-config.yaml --l2-config ./example/l2-config.yaml --bench-script ./example/run-bench.sh --output output.txt --project-dir dest
+```
+
+```bash
+./launcher.sh run-bench --bench-script ./example/run-bench.sh --output output.txt --project-dir dest
 ```
 
 ### How it works
 `--dest`で指定されたディレクトリにVagrant用の設定ファイルを生成し、Vagrantを実行します。
 `<dest>/l1-vagrant`がホストマシン上で実行されるL1 VM、`<dest>/l2-vagrant`がL1 VM上で実行されるL2 VM用のディレクトリです。
-ただし、`l2-vagrant`の内容はL1 VMにコピーされ、L1 VM上で実行されるため、ホストマシン上では実行されず、ディレクトリ内の変更も反映されません。
+`l2-vagrant`の内容はL1 VMのsync folderとして設定されるので、ホストマシンでの変更がL2 VMに反映されます。
 
 `vagrant up`によってプロビジョニングが終了したあと、`--bench-script`で指定されたスクリプトをL2 VM上で実行します。
 L2 VM上で実行されるスクリプトの標準出力結果は、`--output`で指定されたファイルに保存され、指定がなかった場合は標準出力に吐き出されます。
