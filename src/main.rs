@@ -409,6 +409,14 @@ fn run_bench(args: RunBenchArgs) -> Result<(), anyhow::Error> {
         .arg("reload")
         .status()?;
 
+    // Boot L2 VM
+    process::Command::new("vagrant")
+        .current_dir(&l1_vagrant_dir)
+        .arg("ssh")
+        .arg("-c")
+        .arg("cd /home/vagrant/l2-vagrant && vagrant up --provision")
+        .status()?;
+
     run_l2_bench(&l1_vagrant_dir, args.output.as_ref())?;
     Ok(())
 }
