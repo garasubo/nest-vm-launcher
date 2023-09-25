@@ -26,8 +26,9 @@ Vagrant.configure("2") do |config|
     
     # enable network bridge
     # Ref: https://developer.hashicorp.com/vagrant/docs/networking/public_network
-    if yaml_config["enable_network_bridge"] == true
-      l2.vm.network "public_network", bridge: "eth0", dev: "eth0"
+    if yaml_config["network_interface"] != nil then
+      network_interface = yaml_config["network_interface"]
+      l2.vm.network "public_network", bridge: network_interface, dev: network_interface
     end
 
     # provisoning

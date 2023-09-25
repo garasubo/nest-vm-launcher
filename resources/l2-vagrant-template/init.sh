@@ -2,7 +2,7 @@
 
 set -euxo pipefail
 
-sudo apt-get update && sudo apt-get install -y  rsync php php8.1-cli php
+sudo apt-get update && sudo apt-get install -y  rsync php php8.1-cli php-xml
 
 # install sysbench
 if ! which sysbench > /dev/null ; then
