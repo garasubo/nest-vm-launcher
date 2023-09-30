@@ -199,7 +199,6 @@ fn create_l1_vagrant_directory(
     arch: Arch,
     resource_path: &PathBuf,
     l1_vagrant_config: L1VagrantConfig,
-    l2_vagrant_dir: &PathBuf,
     overwrite: bool,
 ) -> Result<(), anyhow::Error> {
     let l1_vagrant_template_path = resource_path.join("l1-vagrant-template");
@@ -468,7 +467,6 @@ fn run_create(args: CreateArgs, arch: Arch, resource_path: &PathBuf) -> Result<(
             arch,
             resource_path,
             l1_config,
-            &l2_vagrant_dest,
             args.overwrite,
         )?;
         create_l2_vagrant_directory(
@@ -607,6 +605,11 @@ fn run_bench(args: RunBenchArgs) -> Result<(), anyhow::Error> {
             bench_script_dest,
             &fs_extra::file::CopyOptions::new().overwrite(true),
         )?;
+        // Update l2-vagrant config
+        let config_path = l2_vagrant_dir.join("config.yaml");
+        let mut config: GeneratedL2VagrantConfig = serde_yaml::from_reader(std::fs::File::open(&config_path)?)?;
+        config.bench_script_path = Some(PathBuf::from("./run-bench.sh"));
+        serde_yaml::to_writer(std::fs::File::open(&config_path)?, &config)?;
         // Sync l2-vagrant directory
         process::Command::new("vagrant")
             .current_dir(&l1_vagrant_dir)
@@ -632,6 +635,11 @@ fn run_bench(args: RunBenchArgs) -> Result<(), anyhow::Error> {
             bench_script_dest,
             &fs_extra::file::CopyOptions::new().overwrite(true),
         )?;
+        // Update l2-vagrant config
+        let config_path = l2_vagrant_dir.join("config.yaml");
+        let mut config: GeneratedL2VagrantConfig = serde_yaml::from_reader(std::fs::File::open(&config_path)?)?;
+        config.bench_script_path = Some(PathBuf::from("./run-bench.sh"));
+        serde_yaml::to_writer(std::fs::File::open(&config_path)?, &config)?;
 
         // Sync l2-vagrant directory
         process::Command::new("vagrant")
