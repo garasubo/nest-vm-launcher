@@ -224,7 +224,7 @@ fn create_l1_vagrant_directory(
     let generated_l1_config = GeneratedL1VagrantConfig {
         l1_vagrant_config,
         arch,
-        l2_vagrant_dir: std::fs::canonicalize(&l2_vagrant_dir)?,
+        l2_vagrant_dir: PathBuf::from("../l2-vagrant"),
     };
     let l1_vagrant_config_file =
         std::fs::File::create(l1_vagrant_dest.join("config.yaml"))?;
