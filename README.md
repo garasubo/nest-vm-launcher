@@ -4,7 +4,6 @@
 ## Features
 - L1 VM及びL2 VMの作成
 - L2 VM上でのベンチマーク実行
-    - `sysbench`と`phronix-test-suite`が利用できます
 - L2 VM相当の環境をL1 VMとして作成してベンチマーク実行
     - ネストされた環境とそうでない環境との比較に便利な機能です
 
@@ -24,12 +23,12 @@
 
 新しく作業用のディレクトリを作成し、VMをつくる場合は以下のように実行します。
 ```bash
-./launcher.sh create --l1-config ./example/l1-config.yaml --l2-config ./example/l2-config.yaml --bench-script ./example/run-bench.sh --output output.txt --project-dir dest
+./launcher.sh create --l1-config ./example/l1-config.yaml --l2-config ./example/l2-config.yaml --bench-script ./example/run-bench.sh --output output.txt --project-dir dest  --l2-provision-script ./example/l2-provision.sh
 ```
 
 既存のディレクトリを利用して作成済みのVMを起動する場合は以下のように実行します。
 ```bash
-./launcher.sh provision --l1-config ./example/l1-config.yaml --l2-config ./example/l2-config.yaml --bench-script ./example/run-bench.sh --output output.txt --project-dir dest
+./launcher.sh provision --l1-config ./example/l1-config.yaml --l2-config ./example/l2-config.yaml --bench-script ./example/run-bench.sh --output output.txt --project-dir dest --l2-provision-script ./example/l2-provision.sh
 ```
 
 作成済みのVM上でベンチマーク実行を行う場合は以下のように実行します。

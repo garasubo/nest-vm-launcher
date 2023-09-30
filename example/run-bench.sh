@@ -2,5 +2,4 @@
 
 set -euxo pipefail
 
-sysbench --test=cpu run
-
+phoronix-test-suite batch-run build-linux-kernel

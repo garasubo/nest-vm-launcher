@@ -1,11 +1,11 @@
+use anyhow::anyhow;
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
-use std::{fs, process};
 use std::process::Stdio;
-use anyhow::anyhow;
+use std::{fs, process};
 use strum_macros::EnumString;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -26,9 +26,15 @@ struct CreateArgs {
     project_dir: Option<PathBuf>,
     #[clap(short, long, help = "Path to bench script running in L2 VM")]
     bench_script: Option<PathBuf>,
+    #[clap(short, long, help = "Path to provision script for L2 VM")]
+    l2_provision_script: Option<PathBuf>,
     #[clap(short, long, help = "Path to output file for benchmark results")]
     output: Option<PathBuf>,
-    #[clap(long, default_value_t = false, help = "Path to output file for benchmark results")]
+    #[clap(
+        long,
+        default_value_t = false,
+        help = "Path to output file for benchmark results"
+    )]
     overwrite: bool,
     #[clap(long, default_value_t = false, help = "Disable nested virtualization")]
     no_nested: bool,
@@ -44,9 +50,15 @@ struct ProvisionArgs {
     project_dir: Option<PathBuf>,
     #[clap(short, long, help = "Path to bench script running in L2 VM")]
     bench_script: Option<PathBuf>,
+    #[clap(short, long, help = "Path to provision script for L2 VM")]
+    l2_provision_script: Option<PathBuf>,
     #[clap(short, long, help = "Path to output file for benchmark results")]
     output: Option<PathBuf>,
-    #[clap(long, default_value_t = false, help = "Overwrite existing files with original template files")]
+    #[clap(
+        long,
+        default_value_t = false,
+        help = "Overwrite existing files with original template files"
+    )]
     sync: bool,
     #[clap(long, default_value_t = false, help = "Disable nested virtualization")]
     no_nested: bool,
@@ -138,6 +150,7 @@ struct GeneratedL2VagrantConfig {
     l2_vagrant_config: L2VagrantConfig,
     bench_script_path: Option<PathBuf>,
     network_interface: Option<String>,
+    enable_provision_script: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -155,6 +168,7 @@ struct GeneratedL2NoNestedVagrantConfig {
     #[serde(flatten)]
     l2_vagrant_config: L2NoNestedVagrantConfig,
     bench_script_path: Option<PathBuf>,
+    enable_provision_script: bool,
 }
 
 impl Default for L1VagrantConfig {
@@ -225,8 +239,7 @@ fn create_l1_vagrant_directory(
         arch,
         l2_vagrant_dir: PathBuf::from("../l2-vagrant"),
     };
-    let l1_vagrant_config_file =
-        std::fs::File::create(l1_vagrant_dest.join("config.yaml"))?;
+    let l1_vagrant_config_file = std::fs::File::create(l1_vagrant_dest.join("config.yaml"))?;
     serde_yaml::to_writer(l1_vagrant_config_file, &generated_l1_config)?;
 
     Ok(())
@@ -237,6 +250,7 @@ fn create_l2_no_nested_vagrant_directory(
     resource_path: &PathBuf,
     l2_vagrant_config: L2NoNestedVagrantConfig,
     bench_script_path: Option<&PathBuf>,
+    l2_provision_script_path: Option<&PathBuf>,
     overwrite: bool,
 ) -> Result<(), anyhow::Error> {
     let l2_vagrant_template_path = resource_path.join("l2-vagrant-template");
@@ -260,8 +274,8 @@ fn create_l2_no_nested_vagrant_directory(
     let mut l2_vagrant_config = GeneratedL2NoNestedVagrantConfig {
         l2_vagrant_config,
         bench_script_path: None,
+        enable_provision_script: false,
     };
-
 
     // Copy bench script if specified
     if let Some(bench_script_path) = &bench_script_path {
@@ -271,14 +285,23 @@ fn create_l2_no_nested_vagrant_directory(
             &bench_script_dest,
             &fs_extra::file::CopyOptions::new().overwrite(true),
         )
-            .unwrap();
-        l2_vagrant_config.bench_script_path =
-            Some(fs::canonicalize(&bench_script_dest)?);
+        .unwrap();
+        l2_vagrant_config.bench_script_path = Some(fs::canonicalize(&bench_script_dest)?);
+    }
+
+    // copy provision script
+    if let Some(provision_script_path) = &l2_provision_script_path {
+        let provision_script_dest = l2_vagrant_dest.join("init.sh");
+        fs_extra::file::copy(
+            provision_script_path,
+            provision_script_dest,
+            &fs_extra::file::CopyOptions::new().overwrite(true),
+        )?;
+        l2_vagrant_config.enable_provision_script = true;
     }
 
     // Write l2-vagrant config
-    let l2_vagrant_config_file =
-        std::fs::File::create(l2_vagrant_dest.join("config.yaml"))?;
+    let l2_vagrant_config_file = std::fs::File::create(l2_vagrant_dest.join("config.yaml"))?;
     serde_yaml::to_writer(l2_vagrant_config_file, &l2_vagrant_config)?;
 
     Ok(())
@@ -289,6 +312,7 @@ fn create_l2_vagrant_directory(
     resource_path: &PathBuf,
     l2_vagrant_config: L2VagrantConfig,
     bench_script_path: Option<&PathBuf>,
+    l2_provision_script_path: Option<&PathBuf>,
     overwrite: bool,
 ) -> Result<(), anyhow::Error> {
     let l2_vagrant_template_path = resource_path.join("l2-vagrant-template");
@@ -318,6 +342,7 @@ fn create_l2_vagrant_directory(
         l2_vagrant_config,
         bench_script_path: None,
         network_interface,
+        enable_provision_script: l2_provision_script_path.is_some(),
     };
     // Copy bench script if specified
     if let Some(bench_script_path) = &bench_script_path {
@@ -327,14 +352,24 @@ fn create_l2_vagrant_directory(
             &bench_script_dest,
             &fs_extra::file::CopyOptions::new().overwrite(true),
         )
-            .unwrap();
+        .unwrap();
         l2_vagrant_config.bench_script_path =
             Some(PathBuf::from("/home/vagrant/l2-vagrant/run-bench.sh"));
     }
 
+    // copy provision script
+    if let Some(provision_script_path) = &l2_provision_script_path {
+        let provision_script_dest = l2_vagrant_dest.join("init.sh");
+        fs_extra::file::copy(
+            provision_script_path,
+            provision_script_dest,
+            &fs_extra::file::CopyOptions::new().overwrite(true),
+        )?;
+        l2_vagrant_config.enable_provision_script = true;
+    }
+
     // Write l2-vagrant config
-    let l2_vagrant_config_file =
-        std::fs::File::create(l2_vagrant_dest.join("config.yaml"))?;
+    let l2_vagrant_config_file = std::fs::File::create(l2_vagrant_dest.join("config.yaml"))?;
     serde_yaml::to_writer(l2_vagrant_config_file, &l2_vagrant_config)?;
 
     Ok(())
@@ -360,13 +395,18 @@ fn provision_vm(vagrant_dir: &PathBuf) -> Result<(), anyhow::Error> {
         .arg("--provision")
         .status()?;
     if !status.success() {
-        return Err(anyhow!(format!("vagrant reload failed with status: {status}")));
+        return Err(anyhow!(format!(
+            "vagrant reload failed with status: {status}"
+        )));
     }
 
     Ok(())
 }
 
-fn run_l2_bench(l1_vagrant_dir: &PathBuf, output_path: Option<&PathBuf>) -> Result<(), anyhow::Error> {
+fn run_l2_bench(
+    l1_vagrant_dir: &PathBuf,
+    output_path: Option<&PathBuf>,
+) -> Result<(), anyhow::Error> {
     // run l2 bench
     let status = process::Command::new("vagrant")
         .current_dir(&l1_vagrant_dir)
@@ -376,7 +416,9 @@ fn run_l2_bench(l1_vagrant_dir: &PathBuf, output_path: Option<&PathBuf>) -> Resu
         .stdout(Stdio::inherit())
         .status()?;
     if !status.success() {
-        return Err(anyhow!(format!("running bench script failed with status: {status}")));
+        return Err(anyhow!(format!(
+            "running bench script failed with status: {status}"
+        )));
     }
 
     let output = process::Command::new("vagrant")
@@ -387,19 +429,27 @@ fn run_l2_bench(l1_vagrant_dir: &PathBuf, output_path: Option<&PathBuf>) -> Resu
         .output()?;
     if !output.status.success() {
         println!("{}", String::from_utf8(output.stderr).unwrap());
-        return Err(anyhow!(format!("reading bench-results.txt failed with status: {status}")));
+        return Err(anyhow!(format!(
+            "reading bench-results.txt failed with status: {status}"
+        )));
     }
 
     if let Some(output_path) = &output_path {
         let mut output_file = std::fs::File::create(output_path)?;
         output_file.write_all(&output.stdout)?;
-        println!("Bench results written to {}", output_path.to_str().unwrap_or("file"));
+        println!(
+            "Bench results written to {}",
+            output_path.to_str().unwrap_or("file")
+        );
     }
 
     Ok(())
 }
 
-fn run_no_nested_l2_bench(l2_vagrant_dir: &PathBuf, output_path: Option<&PathBuf>) -> Result<(), anyhow::Error> {
+fn run_no_nested_l2_bench(
+    l2_vagrant_dir: &PathBuf,
+    output_path: Option<&PathBuf>,
+) -> Result<(), anyhow::Error> {
     // run l2 bench
     // TODO: show output to console as well
     let output = process::Command::new("vagrant")
@@ -411,13 +461,20 @@ fn run_no_nested_l2_bench(l2_vagrant_dir: &PathBuf, output_path: Option<&PathBuf
         .output()?;
     if !output.status.success() {
         println!("{}", String::from_utf8(output.stdout).unwrap());
-        return Err(anyhow!(format!("running bench script failed with status: {}", output.status)));
+        println!("{}", String::from_utf8(output.stderr).unwrap());
+        return Err(anyhow!(format!(
+            "running bench script failed with status: {}",
+            output.status
+        )));
     }
 
     if let Some(output_path) = &output_path {
         let mut output_file = std::fs::File::create(output_path)?;
         output_file.write_all(&output.stdout)?;
-        println!("Bench results written to {}", output_path.to_str().unwrap_or("file"));
+        println!(
+            "Bench results written to {}",
+            output_path.to_str().unwrap_or("file")
+        );
     } else {
         println!("{}", String::from_utf8(output.stdout).unwrap());
     }
@@ -426,7 +483,9 @@ fn run_no_nested_l2_bench(l2_vagrant_dir: &PathBuf, output_path: Option<&PathBuf
 }
 
 fn run_create(args: CreateArgs, arch: Arch, resource_path: &PathBuf) -> Result<(), anyhow::Error> {
-    let project_dir = args.project_dir.unwrap_or_else(|| std::env::current_dir().unwrap());
+    let project_dir = args
+        .project_dir
+        .unwrap_or_else(|| std::env::current_dir().unwrap());
     // TODO: clean up created directories if error occurs
     if args.no_nested {
         let l2_config = if let Some(l2_config_path) = args.l2_config {
@@ -441,6 +500,7 @@ fn run_create(args: CreateArgs, arch: Arch, resource_path: &PathBuf) -> Result<(
             resource_path,
             l2_config,
             args.bench_script.as_ref(),
+            args.l2_provision_script.as_ref(),
             args.overwrite,
         )?;
         launch_vm(&l2_vagrant_dest)?;
@@ -474,6 +534,7 @@ fn run_create(args: CreateArgs, arch: Arch, resource_path: &PathBuf) -> Result<(
             resource_path,
             l2_config,
             args.bench_script.as_ref(),
+            args.l2_provision_script.as_ref(),
             args.overwrite,
         )?;
 
@@ -487,19 +548,33 @@ fn run_create(args: CreateArgs, arch: Arch, resource_path: &PathBuf) -> Result<(
     Ok(())
 }
 
-fn update_l1_config(l1_vagrant_dir: &PathBuf, l1_config: L1VagrantConfig, arch: Arch, l2_vagrant_dir: &PathBuf) -> Result<(), anyhow::Error> {
+fn update_l1_config(
+    l1_vagrant_dir: &PathBuf,
+    l1_config: L1VagrantConfig,
+    arch: Arch,
+    l2_vagrant_dir: &PathBuf,
+) -> Result<(), anyhow::Error> {
     let l1_config = GeneratedL1VagrantConfig {
         l1_vagrant_config: l1_config,
         arch,
         l2_vagrant_dir: std::fs::canonicalize(&l2_vagrant_dir)?,
     };
 
-    serde_yaml::to_writer(std::fs::File::create(l1_vagrant_dir.join("config.yaml"))?, &l1_config)?;
+    serde_yaml::to_writer(
+        std::fs::File::create(l1_vagrant_dir.join("config.yaml"))?,
+        &l1_config,
+    )?;
 
     Ok(())
 }
 
-fn update_l2_config(l2_vagrant_dir: &PathBuf, l2_config: L2VagrantConfig, bench_script: Option<&PathBuf>) -> Result<(), anyhow::Error> {
+fn update_l2_config(
+    l2_vagrant_dir: &PathBuf,
+    l2_config: L2VagrantConfig,
+    bench_script: Option<&PathBuf>,
+    provision_script_path: Option<&PathBuf>,
+    no_nested: bool,
+) -> Result<(), anyhow::Error> {
     let network_interface = if l2_config.enable_network_bridge {
         Some("eth0".to_string())
     } else {
@@ -509,26 +584,47 @@ fn update_l2_config(l2_vagrant_dir: &PathBuf, l2_config: L2VagrantConfig, bench_
         l2_vagrant_config: l2_config,
         bench_script_path: None,
         network_interface,
+        enable_provision_script: provision_script_path.is_some(),
     };
     if let Some(bench_script_path) = bench_script {
         let bench_script_dest = l2_vagrant_dir.join("run-bench.sh");
         fs_extra::file::copy(
             bench_script_path,
-            bench_script_dest,
+            &bench_script_dest,
             &fs_extra::file::CopyOptions::new().overwrite(true),
         )?;
-        l2_config.bench_script_path =
-            Some(PathBuf::from("/home/vagrant/l2-vagrant/run-bench.sh"));
+        if !no_nested {
+            l2_config.bench_script_path = Some(PathBuf::from("/home/vagrant/l2-vagrant/run-bench.sh"));
+        } else {
+            l2_config.bench_script_path = Some(fs::canonicalize(bench_script_dest)?);
+        }
     }
 
-    serde_yaml::to_writer(std::fs::File::create(l2_vagrant_dir.join("config.yaml"))?, &l2_config)?;
+    if let Some(provision_script_path) = provision_script_path {
+        let provision_script_dest = l2_vagrant_dir.join("init.sh");
+        fs_extra::file::copy(
+            provision_script_path,
+            provision_script_dest,
+            &fs_extra::file::CopyOptions::new().overwrite(true),
+        )?;
+    }
+
+    serde_yaml::to_writer(
+        std::fs::File::create(l2_vagrant_dir.join("config.yaml"))?,
+        &l2_config,
+    )?;
 
     Ok(())
 }
 
-
-fn run_provision(args: ProvisionArgs, resource_path: &PathBuf, arch: Arch) -> Result<(), anyhow::Error> {
-    let project_path = args.project_dir.unwrap_or_else(|| std::env::current_dir().unwrap());
+fn run_provision(
+    args: ProvisionArgs,
+    resource_path: &PathBuf,
+    arch: Arch,
+) -> Result<(), anyhow::Error> {
+    let project_path = args
+        .project_dir
+        .unwrap_or_else(|| std::env::current_dir().unwrap());
     let l1_vagrant_dir = project_path.join("l1-vagrant");
     let l2_vagrant_dir = project_path.join("l2-vagrant");
     let no_nested_l2_vagrant_dir = project_path.join("l2-vagrant-no-nested");
@@ -539,24 +635,27 @@ fn run_provision(args: ProvisionArgs, resource_path: &PathBuf, arch: Arch) -> Re
             fs_extra::dir::copy(
                 l1_vagrant_template_path.as_path(),
                 l1_vagrant_dir.as_path(),
-                &fs_extra::dir::CopyOptions::new().overwrite(true).content_only(true),
+                &fs_extra::dir::CopyOptions::new()
+                    .overwrite(true)
+                    .content_only(true),
             )?;
             let l2_vagrant_template_path = resource_path.join("l2-vagrant-template");
             fs_extra::dir::copy(
                 l2_vagrant_template_path.as_path(),
                 l2_vagrant_dir.as_path(),
-                &fs_extra::dir::CopyOptions::new().overwrite(true).content_only(true),
+                &fs_extra::dir::CopyOptions::new()
+                    .overwrite(true)
+                    .content_only(true),
             )?;
-
         } else {
             let l2_vagrant_template_path = resource_path.join("l2-vagrant-template");
             fs_extra::dir::copy(
                 l2_vagrant_template_path.as_path(),
                 no_nested_l2_vagrant_dir.as_path(),
-                &fs_extra::dir::CopyOptions::new().overwrite(true).content_only(true),
+                &fs_extra::dir::CopyOptions::new()
+                    .overwrite(true)
+                    .content_only(true),
             )?;
-
-
         }
     }
 
@@ -567,7 +666,23 @@ fn run_provision(args: ProvisionArgs, resource_path: &PathBuf, arch: Arch) -> Re
         }
         if let Some(l2_config_path) = args.l2_config {
             let l2_config = serde_yaml::from_reader(std::fs::File::open(l2_config_path)?)?;
-            update_l2_config(&l2_vagrant_dir, l2_config, args.bench_script.as_ref())?;
+            update_l2_config(
+                &l2_vagrant_dir,
+                l2_config,
+                args.bench_script.as_ref(),
+                args.l2_provision_script.as_ref(),
+                false
+            )?;
+        } else if args.l2_provision_script.is_some() {
+            let original_config_path = l2_vagrant_dir.join("config.yaml");
+            let l2_config = serde_yaml::from_reader(std::fs::File::open(&original_config_path)?)?;
+            update_l2_config(
+                &l2_vagrant_dir,
+                l2_config,
+                args.bench_script.as_ref(),
+                args.l2_provision_script.as_ref(),
+                false
+            )?;
         }
 
         provision_vm(&l1_vagrant_dir)?;
@@ -576,9 +691,26 @@ fn run_provision(args: ProvisionArgs, resource_path: &PathBuf, arch: Arch) -> Re
             run_l2_bench(&l1_vagrant_dir, args.output.as_ref())?;
         }
     } else {
+        // no nested version
         if let Some(l2_config_path) = args.l2_config {
             let l2_config = serde_yaml::from_reader(std::fs::File::open(l2_config_path)?)?;
-            update_l2_config(&no_nested_l2_vagrant_dir, l2_config, args.bench_script.as_ref())?;
+            update_l2_config(
+                &no_nested_l2_vagrant_dir,
+                l2_config,
+                args.bench_script.as_ref(),
+                args.l2_provision_script.as_ref(),
+                true
+            )?;
+        } else if args.l2_provision_script.is_some() {
+            let original_config_path = l2_vagrant_dir.join("config.yaml");
+            let l2_config = serde_yaml::from_reader(std::fs::File::open(&original_config_path)?)?;
+            update_l2_config(
+                &l2_vagrant_dir,
+                l2_config,
+                args.bench_script.as_ref(),
+                args.l2_provision_script.as_ref(),
+                true
+            )?;
         }
 
         provision_vm(&no_nested_l2_vagrant_dir)?;
@@ -593,7 +725,9 @@ fn run_provision(args: ProvisionArgs, resource_path: &PathBuf, arch: Arch) -> Re
 
 // TODO: support no_nested
 fn run_bench(args: RunBenchArgs) -> Result<(), anyhow::Error> {
-    let project_path = args.project_dir.unwrap_or_else(|| std::env::current_dir().unwrap());
+    let project_path = args
+        .project_dir
+        .unwrap_or_else(|| std::env::current_dir().unwrap());
     if !args.no_nested {
         let l1_vagrant_dir = project_path.join("l1-vagrant");
         let l2_vagrant_dir = project_path.join("l2-vagrant");
@@ -609,7 +743,7 @@ fn run_bench(args: RunBenchArgs) -> Result<(), anyhow::Error> {
         let config_path = l2_vagrant_dir.join("config.yaml");
         let mut config: GeneratedL2VagrantConfig = serde_yaml::from_reader(std::fs::File::open(&config_path)?)?;
         config.bench_script_path = Some(PathBuf::from("./run-bench.sh"));
-        serde_yaml::to_writer(std::fs::File::open(&config_path)?, &config)?;
+        serde_yaml::to_writer(std::fs::File::create(&config_path)?, &config)?;
         // Sync l2-vagrant directory
         process::Command::new("vagrant")
             .current_dir(&l1_vagrant_dir)
@@ -647,6 +781,7 @@ fn run_bench(args: RunBenchArgs) -> Result<(), anyhow::Error> {
         process::Command::new("vagrant")
             .current_dir(&l2_vagrant_dir)
             .arg("reload")
+            .arg("--provision")
             .status()?;
 
         run_no_nested_l2_bench(&l2_vagrant_dir, args.output.as_ref())?;
@@ -665,15 +800,14 @@ fn main() -> Result<(), anyhow::Error> {
         panic!("kvm_intel or kvm_amd module is not loaded");
     };
 
-    match args.command {
-        Command::Create(args) => {
-            run_create(args, arch, &resource_path)
-        }
-        Command::Provision(args) => {
-            run_provision(args, &resource_path, arch)
-        }
-        Command::RunBench(args) => {
-            run_bench(args)
-        }
+    let result = match args.command {
+        Command::Create(args) => run_create(args, arch, &resource_path),
+        Command::Provision(args) => run_provision(args, &resource_path, arch),
+        Command::RunBench(args) => run_bench(args),
+    };
+    if let Err(err) = result {
+        println!("{:?}", err);
+        return Err(err);
     }
+    Ok(())
 }

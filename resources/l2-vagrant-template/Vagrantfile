@@ -36,7 +36,9 @@ Vagrant.configure("2") do |config|
     if yaml_config["bench_script_path"] != nil
       l2.vm.provision "file", source: yaml_config["bench_script_path"], destination: "/home/vagrant/run-bench.sh"
     end
-    l2.vm.provision "shell", path: "./init.sh"
+    if yaml_config["enable_provision_script"] then
+        l2.vm.provision "shell", path: "./init.sh", privileged: false
+    end
   end
 
 end
