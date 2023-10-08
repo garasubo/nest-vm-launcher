@@ -788,9 +788,14 @@ fn main() -> Result<(), anyhow::Error> {
         panic!("kvm_intel or kvm_amd module is not loaded");
     };
 
-    match args.command {
+    let result = match args.command {
         Command::Create(args) => run_create(args, arch, &resource_path),
         Command::Provision(args) => run_provision(args, &resource_path, arch),
         Command::RunBench(args) => run_bench(args),
+    };
+    if let Err(err) = result {
+        println!("{:?}", err);
+        return Err(err);
     }
+    Ok(())
 }
