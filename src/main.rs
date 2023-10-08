@@ -161,7 +161,6 @@ struct L2NoNestedVagrantConfig {
     #[serde(default)]
     cpu_mode: CpuMode,
     network_interface: Option<String>,
-    enable_provision_script: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -205,7 +204,6 @@ impl Default for L2NoNestedVagrantConfig {
             memory: 2048,
             cpu_mode: CpuMode::Custom,
             network_interface: None,
-            enable_provision_script: false,
         }
     }
 }
