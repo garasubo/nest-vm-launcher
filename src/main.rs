@@ -732,7 +732,7 @@ fn run_bench(args: RunBenchArgs) -> Result<(), anyhow::Error> {
         let config_path = l2_vagrant_dir.join("config.yaml");
         let mut config: GeneratedL2VagrantConfig = serde_yaml::from_reader(std::fs::File::open(&config_path)?)?;
         config.bench_script_path = Some(PathBuf::from("./run-bench.sh"));
-        serde_yaml::to_writer(std::fs::File::open(&config_path)?, &config)?;
+        serde_yaml::to_writer(std::fs::File::create(&config_path)?, &config)?;
         // Sync l2-vagrant directory
         process::Command::new("vagrant")
             .current_dir(&l1_vagrant_dir)
