@@ -770,8 +770,8 @@ fn run_bench(args: RunBenchArgs) -> Result<(), anyhow::Error> {
         // Sync l2-vagrant directory
         process::Command::new("vagrant")
             .current_dir(&l2_vagrant_dir)
-            .arg("provision")
-            .arg("--reload")
+            .arg("reload")
+            .arg("--provision")
             .status()?;
 
         run_no_nested_l2_bench(&l2_vagrant_dir, args.output.as_ref())?;
