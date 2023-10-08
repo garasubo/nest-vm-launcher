@@ -794,7 +794,7 @@ fn main() -> Result<(), anyhow::Error> {
         Command::RunBench(args) => run_bench(args),
     };
     if let Err(err) = result {
-        println!("{:?}", err);
+        println!("{:?}", err.backtrace());
         return Err(err);
     }
     Ok(())
