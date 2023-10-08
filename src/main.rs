@@ -461,6 +461,7 @@ fn run_no_nested_l2_bench(
         .output()?;
     if !output.status.success() {
         println!("{}", String::from_utf8(output.stdout).unwrap());
+        println!("{}", String::from_utf8(output.stderr).unwrap());
         return Err(anyhow!(format!(
             "running bench script failed with status: {}",
             output.status
@@ -769,7 +770,8 @@ fn run_bench(args: RunBenchArgs) -> Result<(), anyhow::Error> {
         // Sync l2-vagrant directory
         process::Command::new("vagrant")
             .current_dir(&l2_vagrant_dir)
-            .arg("reload")
+            .arg("provision")
+            .arg("--reload")
             .status()?;
 
         run_no_nested_l2_bench(&l2_vagrant_dir, args.output.as_ref())?;
