@@ -20,6 +20,9 @@ Vagrant.configure("2") do |config|
       libvirt.cpus = yaml_config["cpus"]
       libvirt.memory = yaml_config["memory"]
       libvirt.cpu_mode = yaml_config["cpu_mode"]
+      if yaml_config["disk_size"] != nil then
+        libvirt.machine_virtual_size = yaml_config["disk_size"]
+      end
     end
 
     # enable network bridge

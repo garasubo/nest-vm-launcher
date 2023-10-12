@@ -19,6 +19,9 @@ Vagrant.configure("2") do |config|
       libvirt.nested = "true"
       libvirt.cpus = yaml_config["cpus"]
       libvirt.memory = yaml_config["memory"]
+      if yaml_config["disk_size"] != nil then
+        libvirt.machine_virtual_size = yaml_config["disk_size"]
+      end
       # avoid network segment conflict with default network
       libvirt.management_network_name = 'vagrant-net0'
       libvirt.management_network_address = '192.168.124.0/24'

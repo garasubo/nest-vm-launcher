@@ -123,6 +123,7 @@ struct L1VagrantConfig {
     cpu_mode: CpuMode,
     network_interface: Option<String>,
     kvm_options: HashMap<String, String>,
+    disk_size: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -142,6 +143,7 @@ struct L2VagrantConfig {
     cpu_mode: CpuMode,
     #[serde(default)]
     enable_network_bridge: bool,
+    disk_size: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -161,6 +163,7 @@ struct L2NoNestedVagrantConfig {
     #[serde(default)]
     cpu_mode: CpuMode,
     network_interface: Option<String>,
+    disk_size: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -180,6 +183,7 @@ impl Default for L1VagrantConfig {
             cpu_mode: CpuMode::Custom,
             network_interface: None,
             kvm_options: HashMap::new(),
+            disk_size: None,
         }
     }
 }
@@ -192,6 +196,7 @@ impl Default for L2VagrantConfig {
             memory: 2048,
             cpu_mode: CpuMode::Custom,
             enable_network_bridge: false,
+            disk_size: None,
         }
     }
 }
@@ -204,6 +209,7 @@ impl Default for L2NoNestedVagrantConfig {
             memory: 2048,
             cpu_mode: CpuMode::Custom,
             network_interface: None,
+            disk_size: None,
         }
     }
 }
