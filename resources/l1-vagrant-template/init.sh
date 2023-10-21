@@ -14,4 +14,5 @@ sudo apt-get update && sudo apt-get install -y qemu libvirt-daemon-system libvir
 
 sudo adduser vagrant libvirt
 
+sudo lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv
 sudo resize2fs /dev/mapper/ubuntu--vg-ubuntu--lv

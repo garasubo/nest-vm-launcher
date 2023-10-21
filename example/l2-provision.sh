@@ -2,6 +2,7 @@
 
 set -euxo pipefail
 
+sudo lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv
 sudo resize2fs /dev/mapper/ubuntu--vg-ubuntu--lv
 sudo apt-get update && sudo apt-get install -y  rsync php php8.1-cli php-xml
 
