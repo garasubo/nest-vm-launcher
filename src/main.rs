@@ -17,6 +17,14 @@ enum Arch {
 }
 
 #[derive(Parser)]
+struct DeleteArgs {
+    #[clap(short, long, help = "Path to project directory")]
+    project_dir: Option<PathBuf>,
+    #[clap(long, default_value_t = false, help = "Delete a directory for no-nested virtualization")]
+    no_nested: bool,
+}
+
+#[derive(Parser)]
 struct CreateArgs {
     #[clap(long, help = "Path to L1 VM config yaml file")]
     l1_config: Option<PathBuf>,
@@ -78,6 +86,8 @@ struct RunBenchArgs {
 
 #[derive(Subcommand)]
 enum Command {
+    #[command(about = "Delete VM")]
+    Delete(DeleteArgs),
     #[command(about = "Create vagrant directories and config files")]
     Create(CreateArgs),
     #[command(about = "Run provision script")]
@@ -488,6 +498,39 @@ fn run_no_nested_l2_bench(
     Ok(())
 }
 
+fn run_delete(args: DeleteArgs) -> Result<(), anyhow::Error> {
+    let project_dir = args
+        .project_dir
+        .unwrap_or_else(|| std::env::current_dir().unwrap());
+    if !args.no_nested {
+        let l1_vagrant_dir = project_dir.join("l1-vagrant");
+        let status = process::Command::new("vagrant")
+            .current_dir(&l1_vagrant_dir)
+            .arg("destroy")
+            .status()?;
+        if !status.success() {
+            println!("Warning: vagrant destroy failed with status: {}", status);
+            println!("continue to clean up directory");
+        }
+        fs_extra::dir::remove(project_dir.join("l1-vagrant"))?;
+        fs_extra::dir::remove(project_dir.join("l2-vagrant"))?;
+
+    } else {
+        let l2_vagrant_dir = project_dir.join("l2-vagrant-no-nested");
+        let status = process::Command::new("vagrant")
+            .current_dir(&l2_vagrant_dir)
+            .arg("destroy")
+            .status()?;
+        if !status.success() {
+            println!("Warning: vagrant destroy failed with status: {}", status);
+            println!("continue to clean up directory");
+        }
+        fs_extra::dir::remove(project_dir.join("l2-vagrant-no-nested"))?;
+    }
+
+    Ok(())
+}
+
 fn run_create(args: CreateArgs, arch: Arch, resource_path: &PathBuf) -> Result<(), anyhow::Error> {
     let project_dir = args
         .project_dir
@@ -807,6 +850,7 @@ fn main() -> Result<(), anyhow::Error> {
     };
 
     let result = match args.command {
+        Command::Delete(args) => run_delete(args),
         Command::Create(args) => run_create(args, arch, &resource_path),
         Command::Provision(args) => run_provision(args, &resource_path, arch),
         Command::RunBench(args) => run_bench(args),
