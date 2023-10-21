@@ -13,3 +13,5 @@ fi
 sudo apt-get update && sudo apt-get install -y qemu libvirt-daemon-system libvirt-dev ebtables libguestfs-tools vagrant ruby-fog-libvirt build-essential rsync
 
 sudo adduser vagrant libvirt
+
+sudo resize2fs /dev/mapper/ubuntu--vg-ubuntu--lv
