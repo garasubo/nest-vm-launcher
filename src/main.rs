@@ -2,11 +2,12 @@ use anyhow::anyhow;
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::Write;
 use std::path::PathBuf;
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
 use std::{fs, process};
+use std::io::Write;
 use strum_macros::EnumString;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 enum Arch {
@@ -462,37 +463,59 @@ fn run_l2_bench(
     Ok(())
 }
 
-fn run_no_nested_l2_bench(
+async fn run_no_nested_l2_bench(
     l2_vagrant_dir: &PathBuf,
     output_path: Option<&PathBuf>,
 ) -> Result<(), anyhow::Error> {
     // run l2 bench
-    // TODO: show output to console as well
-    let output = process::Command::new("vagrant")
+    let mut child = tokio::process::Command::new("vagrant")
         .current_dir(&l2_vagrant_dir)
         .arg("ssh")
         .arg("-c")
         .arg("./run-bench.sh")
         .stdout(Stdio::piped())
-        .output()?;
-    if !output.status.success() {
-        println!("{}", String::from_utf8(output.stdout).unwrap());
-        println!("{}", String::from_utf8(output.stderr).unwrap());
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+    let mut stdout_outputs = String::new();
+    let mut stderr_outputs = String::new();
+    let mut child_stdout = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut child_stderr = BufReader::new(child.stderr.take().unwrap()).lines();
+
+    let res: tokio::io::Result<ExitStatus> = loop {
+        tokio::select! {
+            res = child_stdout.next_line() => {
+                if let Some(line) = res? {
+                    stdout_outputs.push_str(&line);
+                    print!("{}\r\n", line);
+                }
+            }
+            res = child_stderr.next_line() => {
+                if let Some(line) = res? {
+                    stderr_outputs.push_str(&line);
+                    eprint!("{}\r\n", line);
+                }
+            }
+            res = child.wait() => {
+                break res;
+            }
+        }
+    };
+
+    if !res.is_ok() || !res.as_ref().unwrap().success() {
         return Err(anyhow!(format!(
             "running bench script failed with status: {}",
-            output.status
+            res.map(|status| status.code().unwrap_or(-1)).unwrap_or(-1)
         )));
     }
 
     if let Some(output_path) = &output_path {
         let mut output_file = std::fs::File::create(output_path)?;
-        output_file.write_all(&output.stdout)?;
+        output_file.write_all(stdout_outputs.as_bytes())?;
         println!(
             "Bench results written to {}",
             output_path.to_str().unwrap_or("file")
         );
-    } else {
-        println!("{}", String::from_utf8(output.stdout).unwrap());
     }
 
     Ok(())
@@ -531,7 +554,7 @@ fn run_delete(args: DeleteArgs) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-fn run_create(args: CreateArgs, arch: Arch, resource_path: &PathBuf) -> Result<(), anyhow::Error> {
+async fn run_create(args: CreateArgs, arch: Arch, resource_path: &PathBuf) -> Result<(), anyhow::Error> {
     let project_dir = args
         .project_dir
         .unwrap_or_else(|| std::env::current_dir().unwrap());
@@ -555,7 +578,7 @@ fn run_create(args: CreateArgs, arch: Arch, resource_path: &PathBuf) -> Result<(
         launch_vm(&l2_vagrant_dest)?;
 
         if args.bench_script.is_some() {
-            run_no_nested_l2_bench(&l2_vagrant_dest, args.output.as_ref())?;
+            run_no_nested_l2_bench(&l2_vagrant_dest, args.output.as_ref()).await?;
         }
     } else {
         let l1_config = if let Some(l1_config_path) = args.l1_config {
@@ -666,7 +689,7 @@ fn update_l2_config(
     Ok(())
 }
 
-fn run_provision(
+async fn run_provision(
     args: ProvisionArgs,
     resource_path: &PathBuf,
     arch: Arch,
@@ -765,15 +788,14 @@ fn run_provision(
         provision_vm(&no_nested_l2_vagrant_dir)?;
 
         if args.bench_script.is_some() {
-            run_no_nested_l2_bench(&no_nested_l2_vagrant_dir, args.output.as_ref())?;
+            run_no_nested_l2_bench(&no_nested_l2_vagrant_dir, args.output.as_ref()).await?;
         }
     }
 
     Ok(())
 }
 
-// TODO: support no_nested
-fn run_bench(args: RunBenchArgs) -> Result<(), anyhow::Error> {
+async fn run_bench(args: RunBenchArgs) -> Result<(), anyhow::Error> {
     let project_path = args
         .project_dir
         .unwrap_or_else(|| std::env::current_dir().unwrap());
@@ -833,11 +855,13 @@ fn run_bench(args: RunBenchArgs) -> Result<(), anyhow::Error> {
             .arg("--provision")
             .status()?;
 
-        run_no_nested_l2_bench(&l2_vagrant_dir, args.output.as_ref())?;
+        run_no_nested_l2_bench(&l2_vagrant_dir, args.output.as_ref()).await?;
     }
     Ok(())
 }
-fn main() -> Result<(), anyhow::Error> {
+
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
     let args = Args::parse();
     let manifest_path = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let resource_path = manifest_path.join("resources");
@@ -851,9 +875,9 @@ fn main() -> Result<(), anyhow::Error> {
 
     let result = match args.command {
         Command::Delete(args) => run_delete(args),
-        Command::Create(args) => run_create(args, arch, &resource_path),
-        Command::Provision(args) => run_provision(args, &resource_path, arch),
-        Command::RunBench(args) => run_bench(args),
+        Command::Create(args) => run_create(args, arch, &resource_path).await,
+        Command::Provision(args) => run_provision(args, &resource_path, arch).await,
+        Command::RunBench(args) => run_bench(args).await,
     };
     if let Err(err) = result {
         println!("{:?}", err);
