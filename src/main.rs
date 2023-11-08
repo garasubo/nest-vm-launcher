@@ -6,8 +6,10 @@ use std::path::PathBuf;
 use std::process::{ExitStatus, Stdio};
 use std::{fs, process};
 use std::io::Write;
+use once_cell::sync::Lazy;
 use strum_macros::EnumString;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use regex::Regex;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 enum Arch {
@@ -224,6 +226,8 @@ impl Default for L2NoNestedVagrantConfig {
         }
     }
 }
+
+static ANSI_ESCAPE_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"\x1B\[([0-9;]+)?[A-Za-z]").unwrap());
 
 fn create_l1_vagrant_directory(
     l1_vagrant_dest: &PathBuf,
@@ -486,14 +490,18 @@ async fn run_no_nested_l2_bench(
         tokio::select! {
             res = child_stdout.next_line() => {
                 if let Some(line) = res? {
-                    stdout_outputs.push_str(&line);
                     print!("{}\r\n", line);
+                    let mut line = ANSI_ESCAPE_PATTERN.replace_all(&line, "");
+                    line += "\n";
+                    stdout_outputs.push_str(&line);
                 }
             }
             res = child_stderr.next_line() => {
                 if let Some(line) = res? {
-                    stderr_outputs.push_str(&line);
                     eprint!("{}\r\n", line);
+                    let mut line = ANSI_ESCAPE_PATTERN.replace_all(&line, "");
+                    line += "\n";
+                    stderr_outputs.push_str(&line);
                 }
             }
             res = child.wait() => {
