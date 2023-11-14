@@ -25,6 +25,8 @@ struct DeleteArgs {
     project_dir: Option<PathBuf>,
     #[clap(long, default_value_t = false, help = "Delete a directory for no-nested virtualization")]
     no_nested: bool,
+    #[clap(short, long, help = "Delete without confirmation")]
+    force: bool,
 }
 
 #[derive(Parser)]
@@ -535,10 +537,13 @@ fn run_delete(args: DeleteArgs) -> Result<(), anyhow::Error> {
         .unwrap_or_else(|| std::env::current_dir().unwrap());
     if !args.no_nested {
         let l1_vagrant_dir = project_dir.join("l1-vagrant");
-        let status = process::Command::new("vagrant")
-            .current_dir(&l1_vagrant_dir)
-            .arg("destroy")
-            .status()?;
+        let mut command = process::Command::new("vagrant");
+        command.current_dir(&l1_vagrant_dir)
+                .arg("destroy");
+        if args.force {
+            command.arg("-f");
+        }
+        let status = command.status()?;
         if !status.success() {
             println!("Warning: vagrant destroy failed with status: {}", status);
             println!("continue to clean up directory");
@@ -548,10 +553,13 @@ fn run_delete(args: DeleteArgs) -> Result<(), anyhow::Error> {
 
     } else {
         let l2_vagrant_dir = project_dir.join("l2-vagrant-no-nested");
-        let status = process::Command::new("vagrant")
-            .current_dir(&l2_vagrant_dir)
-            .arg("destroy")
-            .status()?;
+        let mut command = process::Command::new("vagrant");
+        command.current_dir(&l2_vagrant_dir)
+            .arg("destroy");
+        if args.force {
+            command.arg("-f");
+        }
+        let status = command.status()?;
         if !status.success() {
             println!("Warning: vagrant destroy failed with status: {}", status);
             println!("continue to clean up directory");
