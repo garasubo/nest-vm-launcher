@@ -1,4 +1,4 @@
-# Nested VM Launcher
+# Marigold
 ネストされた仮想環境をlibvirt経由で作成し、その上でベンチマークを実行するためのスクリプトです。
 
 ## Features
